@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const app = express();
@@ -9,6 +10,7 @@ const VoiceGrant = AccessToken.VoiceGrant;
 
 
 app.use(express.json());
+app.use(express.static('public'));
 
 // ─────────────────────────────────────────────
 // AUTH
@@ -25,18 +27,40 @@ function authenticate(req, res, next) {
     return res.status(403).json({ error: "Forbidden. Invalid API token." });
   next();
 }
+app.get('/token-debug', (req, res) => {
+  res.json({
+    ACCOUNT_SID:  process.env.TWILIO_ACCOUNT_SID  || 'MISSING',
+    API_KEY:      process.env.TWILIO_API_KEY       || 'MISSING',
+    API_SECRET:   process.env.TWILIO_API_SECRET    || 'MISSING',
+    TWIML_APP_SID: process.env.TWIML_APP_SID      || 'MISSING',
+  });
+});
 
-
+// ── TOKEN ENDPOINT (for browser softphone) ──
 app.get('/token', (req, res) => {
-  const token = new AccessToken(
-    process.env.TWILIO_ACCOUNT_SID,
-    process.env.TWILIO_API_KEY,        // create in Twilio Console → API Keys
-    process.env.TWILIO_API_SECRET,
-    { identity: 'browser-user' }
-  );
-  const grant = new VoiceGrant({ outgoingApplicationSid: process.env.TWIML_APP_SID });
-  token.addGrant(grant);
-  res.json({ token: token.toJwt() });
+  try {
+    const AccessToken = require('twilio').jwt.AccessToken;
+    const VoiceGrant  = AccessToken.VoiceGrant;
+
+    const token = new AccessToken(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_API_KEY,
+      process.env.TWILIO_API_SECRET,
+      { identity: 'browser-user' }
+    );
+
+    const grant = new VoiceGrant({
+      outgoingApplicationSid: process.env.TWIML_APP_SID,
+      incomingAllow: true,
+    });
+
+    token.addGrant(grant);
+    res.json({ token: token.toJwt() });
+
+  } catch (err) {
+    console.error('Token error:', err.message); // ← shows exact error in terminal
+    res.status(500).json({ error: err.message }); // ← shows in browser too
+  }
 });
 
 // ─────────────────────────────────────────────

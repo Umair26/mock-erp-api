@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ERP Voice Tester</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://sdk.twilio.com/js/client/v1.14/twilio.js"></script>
+<style>
+  :root {
+    --bg: #080c14;
+    --surface: #0d1520;
+    --surface2: #111d2e;
+    --border: #1a2d45;
+    --accent: #00e5ff;
+    --accent-dim: rgba(0,229,255,0.12);
+    --green: #00ff88;
+    --green-dim: rgba(0,255,136,0.12);
+    --red: #ff3d5a;
+    --red-dim: rgba(255,61,90,0.12);
+    --amber: #ffb800;
+    --text: #e2eaf5;
+    --muted: #4a6080;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Space Grotesk', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    overflow-y: auto;
+    padding: 40px 16px;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+    animation: gridMove 20s linear infinite;
+    pointer-events: none;
+  }
+
+  @keyframes gridMove {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(48px); }
+  }
+
+  /* Glow orbs */
+  body::after {
+    content: '';
+    position: fixed;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,229,255,0.04) 0%, transparent 70%);
+    top: -200px;
+    left: -100px;
+    pointer-events: none;
+  }
+
+  .phone-wrap {
+    position: relative;
+    z-index: 1;
+    width: 380px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  .header .label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    color: var(--text);
+  }
+
+  .header p {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* Main card */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 28px;
+    box-shadow: 0 0 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,229,255,0.04);
+  }
+
+  /* Status display */
+  .status-display {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 24px;
+    min-height: 90px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s, box-shadow 0.3s;
+    flex-shrink: 0;
+  }
+
+  .status-dot.ready { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .status-dot.calling { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: blink 1s infinite; }
+  .status-dot.connected { background: var(--green); box-shadow: 0 0 12px var(--green); }
+  .status-dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .status-text {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .status-sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+
+  .timer {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 300;
+    color: var(--accent);
+    letter-spacing: 2px;
+    text-align: right;
+  }
+
+  /* Token input */
+  .input-group {
+    margin-bottom: 20px;
+  }
+
+  .input-group label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .input-group input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .input-group input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0,229,255,0.08);
+  }
+
+  .input-group input::placeholder { color: var(--muted); }
+
+  /* Dial pad */
+  .dialpad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .dial-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    user-select: none;
+  }
+
+  .dial-btn:hover {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    transform: scale(1.04);
+  }
+
+  .dial-btn:active { transform: scale(0.97); }
+
+  .dial-btn .num {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .dial-btn .sub {
+    font-family: var(--mono);
+    font-size: 8px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  /* Number display */
+  .number-display {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 18px;
+    color: var(--accent);
+    text-align: center;
+    letter-spacing: 3px;
+    min-height: 48px;
+    margin-bottom: 16px;
+    transition: border-color 0.2s;
+  }
+
+  /* Action buttons */
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .btn {
+    border: none;
+    border-radius: 14px;
+    padding: 16px;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    letter-spacing: 0.3px;
+  }
+
+  .btn-call {
+    background: var(--green);
+    color: #000;
+    box-shadow: 0 4px 20px rgba(0,255,136,0.3);
+  }
+
+  .btn-call:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,255,136,0.4); }
+  .btn-call:active { transform: translateY(0); }
+  .btn-call:disabled { background: var(--muted); box-shadow: none; cursor: not-allowed; transform: none; color: #666; }
+
+  .btn-hangup {
+    background: var(--red);
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(255,61,90,0.3);
+  }
+
+  .btn-hangup:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(255,61,90,0.4); }
+  .btn-hangup:active { transform: translateY(0); }
+  .btn-hangup:disabled { background: var(--muted); box-shadow: none; cursor: not-allowed; transform: none; }
+
+  .btn-icon { font-size: 18px; }
+
+  /* Connect SDK button */
+  .btn-connect {
+    width: 100%;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 12px;
+    padding: 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 16px;
+    letter-spacing: 1px;
+  }
+
+  .btn-connect:hover { background: rgba(0,229,255,0.2); }
+  .btn-connect:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Log */
+  .log-wrap {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .log-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .log-clear {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+
+  .log-clear:hover { color: var(--accent); }
+
+  .log-body {
+    height: 140px;
+    overflow-y: auto;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .log-body::-webkit-scrollbar { width: 4px; }
+  .log-body::-webkit-scrollbar-track { background: transparent; }
+  .log-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .log-entry {
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.4;
+    display: flex;
+    gap: 8px;
+  }
+
+  .log-time { color: var(--muted); flex-shrink: 0; }
+  .log-msg.info { color: var(--text); }
+  .log-msg.success { color: var(--green); }
+  .log-msg.error { color: var(--red); }
+  .log-msg.warn { color: var(--amber); }
+
+  /* Mute button */
+  .btn-mute {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 10px;
+    padding: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 12px;
+  }
+
+  .btn-mute:hover { border-color: var(--amber); color: var(--amber); }
+  .btn-mute.muted { background: rgba(255,184,0,0.1); border-color: var(--amber); color: var(--amber); }
+
+  /* Setup instructions */
+  .setup-note {
+    background: rgba(0,229,255,0.05);
+    border: 1px solid rgba(0,229,255,0.15);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 20px;
+  }
+
+  .setup-note p {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  .setup-note p strong {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 20px 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="phone-wrap">
+  <div class="header">
+    <div class="label">// ERP Voice System</div>
+    <h1>Browser Softphone</h1>
+    <p>Test your voice bot — no real phone needed</p>
+  </div>
+
+  <div class="card">
+
+    <!-- Status -->
+    <div class="status-display">
+      <div class="status-row">
+        <div class="status-dot" id="statusDot"></div>
+        <div class="status-text" id="statusText">Not connected</div>
+      </div>
+      <div class="status-sub" id="statusSub">Paste your Twilio Access Token below to begin</div>
+      <div class="timer" id="timer" style="display:none">00:00</div>
+    </div>
+
+    <!-- Setup note -->
+    <div class="setup-note">
+      <p>
+        <strong>How to get your Access Token:</strong><br>
+        1. Twilio Console → Explore Products → Voice SDK<br>
+        2. Create a TwiML App → set Voice URL to your webhook<br>
+        3. Go to Token Generator → select your TwiML App<br>
+        4. Copy the token and paste it below
+      </p>
+    </div>
+
+    <!-- Token input -->
+    <div class="input-group">
+      <label>Twilio Access Token</label>
+      <input type="text" id="tokenInput" placeholder="eyJhbGciOiJIUzI1NiJ9..." />
+    </div>
+
+    <!-- Connect SDK -->
+    <button class="btn-connect" id="connectBtn" onclick="connectSDK()">
+      ⚡ CONNECT TWILIO SDK
+    </button>
+
+    <div class="divider"></div>
+
+    <!-- Number to call -->
+    <div class="input-group">
+      <label>Your Twilio Phone Number</label>
+      <input type="text" id="toNumber" placeholder="+12025551234" />
+    </div>
+
+    <!-- Dial display -->
+    <div class="number-display" id="dialDisplay">—</div>
+
+    <!-- Dial pad -->
+    <div class="dialpad">
+      <div class="dial-btn" onclick="dialPress('1')"><span class="num">1</span><span class="sub"> </span></div>
+      <div class="dial-btn" onclick="dialPress('2')"><span class="num">2</span><span class="sub">ABC</span></div>
+      <div class="dial-btn" onclick="dialPress('3')"><span class="num">3</span><span class="sub">DEF</span></div>
+      <div class="dial-btn" onclick="dialPress('4')"><span class="num">4</span><span class="sub">GHI</span></div>
+      <div class="dial-btn" onclick="dialPress('5')"><span class="num">5</span><span class="sub">JKL</span></div>
+      <div class="dial-btn" onclick="dialPress('6')"><span class="num">6</span><span class="sub">MNO</span></div>
+      <div class="dial-btn" onclick="dialPress('7')"><span class="num">7</span><span class="sub">PQRS</span></div>
+      <div class="dial-btn" onclick="dialPress('8')"><span class="num">8</span><span class="sub">TUV</span></div>
+      <div class="dial-btn" onclick="dialPress('9')"><span class="num">9</span><span class="sub">WXYZ</span></div>
+      <div class="dial-btn" onclick="dialPress('*')"><span class="num">*</span><span class="sub"> </span></div>
+      <div class="dial-btn" onclick="dialPress('0')"><span class="num">0</span><span class="sub">+</span></div>
+      <div class="dial-btn" onclick="dialPress('#')"><span class="num">#</span><span class="sub"> </span></div>
+    </div>
+
+    <!-- Call / Hangup -->
+    <div class="actions">
+      <button class="btn btn-call" id="callBtn" onclick="makeCall()" disabled>
+        <span class="btn-icon">📞</span> Call
+      </button>
+      <button class="btn btn-hangup" id="hangupBtn" onclick="hangUp()" disabled>
+        <span class="btn-icon">📵</span> End
+      </button>
+    </div>
+
+    <!-- Mute -->
+    <button class="btn-mute" id="muteBtn" onclick="toggleMute()" disabled>
+      🎤 MUTE MICROPHONE
+    </button>
+
+    <!-- Log -->
+    <div class="log-wrap">
+      <div class="log-header">
+        <span>// EVENT LOG</span>
+        <button class="log-clear" onclick="clearLog()">CLEAR</button>
+      </div>
+      <div class="log-body" id="logBody">
+        <div class="log-entry">
+          <span class="log-time">--:--:--</span>
+          <span class="log-msg info">Softphone ready. Connect SDK to begin.</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  let device = null;
+  let activeCall = null;
+  let timerInterval = null;
+  let callSeconds = 0;
+  let isMuted = false;
+  let dialBuffer = '';
+
+  // ── Logging ──
+  function log(msg, type = 'info') {
+    const body = document.getElementById('logBody');
+    const now = new Date();
+    const time = now.toTimeString().slice(0, 8);
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = `<span class="log-time">${time}</span><span class="log-msg ${type}">${msg}</span>`;
+    body.appendChild(entry);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function clearLog() {
+    document.getElementById('logBody').innerHTML = '';
+  }
+
+  // ── Status ──
+  function setStatus(dot, text, sub, showTimer = false) {
+    document.getElementById('statusDot').className = `status-dot ${dot}`;
+    document.getElementById('statusText').textContent = text;
+    document.getElementById('statusSub').textContent = sub;
+    document.getElementById('timer').style.display = showTimer ? 'block' : 'none';
+  }
+
+  // ── Timer ──
+  function startTimer() {
+    callSeconds = 0;
+    timerInterval = setInterval(() => {
+      callSeconds++;
+      const m = String(Math.floor(callSeconds / 60)).padStart(2, '0');
+      const s = String(callSeconds % 60).padStart(2, '0');
+      document.getElementById('timer').textContent = `${m}:${s}`;
+    }, 1000);
+  }
+
+  function stopTimer() {
+    clearInterval(timerInterval);
+    document.getElementById('timer').textContent = '00:00';
+  }
+
+  // ── Dial pad ──
+  function dialPress(digit) {
+    dialBuffer += digit;
+    document.getElementById('dialDisplay').textContent = dialBuffer;
+    if (activeCall) activeCall.sendDigits(digit);
+  }
+
+  // ── Connect Twilio Device ──
+  function connectSDK() {
+    const token = document.getElementById('tokenInput').value.trim();
+    if (!token) {
+      log('⚠ Paste your Access Token first', 'warn');
+      return;
+    }
+
+    log('Connecting Twilio SDK...', 'info');
+    document.getElementById('connectBtn').disabled = true;
+
+    try {
+      device = new Twilio.Device(token, {
+        codecPreferences: ['opus', 'pcmu'],
+        fakeLocalDTMF: true,
+        enableRingingState: true,
+      });
+
+      device.on('ready', () => {
+        log('✔ SDK connected — ready to call', 'success');
+        setStatus('ready', 'Ready', 'SDK connected. Enter your Twilio number and call.');
+        document.getElementById('callBtn').disabled = false;
+        document.getElementById('connectBtn').textContent = '✔ CONNECTED';
+      });
+
+      device.on('error', (err) => {
+        log(`✖ SDK error: ${err.message}`, 'error');
+        setStatus('error', 'Error', err.message);
+      });
+
+      device.on('connect', (conn) => {
+        activeCall = conn;
+        log('📞 Call connected', 'success');
+        setStatus('connected', 'In Call', 'Speak now — your mic is live', true);
+        startTimer();
+        document.getElementById('hangupBtn').disabled = false;
+        document.getElementById('muteBtn').disabled = false;
+        document.getElementById('callBtn').disabled = true;
+      });
+
+      device.on('disconnect', () => {
+        activeCall = null;
+        log('📴 Call ended', 'warn');
+        setStatus('ready', 'Call ended', 'SDK still connected — ready for next call');
+        stopTimer();
+        document.getElementById('hangupBtn').disabled = true;
+        document.getElementById('muteBtn').disabled = true;
+        document.getElementById('callBtn').disabled = false;
+        isMuted = false;
+        document.getElementById('muteBtn').classList.remove('muted');
+        document.getElementById('muteBtn').textContent = '🎤 MUTE MICROPHONE';
+        dialBuffer = '';
+        document.getElementById('dialDisplay').textContent = '—';
+      });
+
+      device.on('incoming', (conn) => {
+        log('📲 Incoming call received', 'info');
+        conn.accept();
+      });
+
+    } catch (err) {
+      log(`✖ Failed to init SDK: ${err.message}`, 'error');
+      document.getElementById('connectBtn').disabled = false;
+    }
+  }
+
+  // ── Make Call ──
+  function makeCall() {
+    if (!device) { log('⚠ Connect SDK first', 'warn'); return; }
+    const to = document.getElementById('toNumber').value.trim();
+    if (!to) { log('⚠ Enter your Twilio phone number', 'warn'); return; }
+
+    log(`📞 Calling ${to}...`, 'info');
+    setStatus('calling', 'Calling...', to);
+    dialBuffer = '';
+    document.getElementById('dialDisplay').textContent = '—';
+
+    try {
+      device.connect({ To: to });
+    } catch (err) {
+      log(`✖ Call failed: ${err.message}`, 'error');
+      setStatus('ready', 'Ready', 'Call failed — check your number and token');
+    }
+  }
+
+  // ── Hang Up ──
+  function hangUp() {
+    if (device) device.disconnectAll();
+    log('📵 You ended the call', 'warn');
+  }
+
+  // ── Mute ──
+  function toggleMute() {
+    if (!activeCall) return;
+    isMuted = !isMuted;
+    activeCall.mute(isMuted);
+    const btn = document.getElementById('muteBtn');
+    if (isMuted) {
+      btn.classList.add('muted');
+      btn.textContent = '🔇 UNMUTE MICROPHONE';
+      log('🔇 Microphone muted', 'warn');
+    } else {
+      btn.classList.remove('muted');
+      btn.textContent = '🎤 MUTE MICROPHONE';
+      log('🎤 Microphone unmuted', 'info');
+    }
+  }
+</script>
+</body>
+</html>
