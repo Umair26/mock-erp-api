@@ -2,6 +2,11 @@ const express = require('express');
 const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
+const AccessToken = require('twilio').jwt.AccessToken;
+const VoiceGrant = AccessToken.VoiceGrant;
+
+
+
 
 app.use(express.json());
 
@@ -20,6 +25,19 @@ function authenticate(req, res, next) {
     return res.status(403).json({ error: "Forbidden. Invalid API token." });
   next();
 }
+
+
+app.get('/token', (req, res) => {
+  const token = new AccessToken(
+    process.env.TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_API_KEY,        // create in Twilio Console → API Keys
+    process.env.TWILIO_API_SECRET,
+    { identity: 'browser-user' }
+  );
+  const grant = new VoiceGrant({ outgoingApplicationSid: process.env.TWIML_APP_SID });
+  token.addGrant(grant);
+  res.json({ token: token.toJwt() });
+});
 
 // ─────────────────────────────────────────────
 // DATABASE
