@@ -33,9 +33,17 @@ async function sendVoiceResponse(ws, text) {
     console.log(`🎤 Synthesizing: "${text}"`);
     const audioBuffer = await synthesizeText(text);
 
+    if (!audioBuffer || audioBuffer.length === 0) {
+      console.error('❌ TTS returned empty buffer');
+      return;
+    }
+
+    console.log(`✅ TTS returned ${audioBuffer.length} bytes of audio`);
+
     // Convert audio buffer to base64 and send through WebSocket as media events
     // Split into chunks matching Twilio's expected size (160 bytes = 20ms at 8kHz)
     const chunkSize = 160;
+    let chunkCount = 0;
     for (let i = 0; i < audioBuffer.length; i += chunkSize) {
       const chunk = audioBuffer.slice(i, Math.min(i + chunkSize, audioBuffer.length));
       const mediaEvent = {
@@ -44,11 +52,14 @@ async function sendVoiceResponse(ws, text) {
           payload: chunk.toString('base64'),
         },
       };
-      ws.send(JSON.stringify(mediaEvent));
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify(mediaEvent));
+        chunkCount++;
+      }
       // Small delay between chunks to avoid overwhelming the connection
       await new Promise(resolve => setTimeout(resolve, 10));
     }
-    console.log(`📞 Sent voice response to caller: "${text}"`);
+    console.log(`📞 Sent voice response to caller: "${text}" (${chunkCount} audio chunks)`);
   } catch (err) {
     console.error('❌ Failed to send voice response:', err.message);
   }
