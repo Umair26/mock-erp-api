@@ -8,7 +8,7 @@ const { searchProduct } = require('./services/semanticSearch');
 const { lookupCustomer, createOrder } = require('./services/erpService');
 const { newCallState, updateState } = require('./services/callState');
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.VOICE_PORT || 4000;
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
