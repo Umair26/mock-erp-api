@@ -67,11 +67,12 @@ wss.on('connection', (ws) => {
         console.log(`📡 Stream started — CallSid: ${data.start?.callSid}`);
       }
 
-      if (data.event === 'media') {
-        if (!dgStream) return;
-        const audio = Buffer.from(data.media.payload, 'base64');
-        dgStream.send(audio);
-      }
+     if (data.event === 'media') {
+  if (!dgStream) return;
+  const audio = Buffer.from(data.media.payload, 'base64');
+  console.log('🔊 Audio chunk received, size:', audio.length); // ← add this
+  dgStream.send(audio);
+}
 
       if (data.event === 'stop') {
         console.log('🛑 Twilio stream stopped');
