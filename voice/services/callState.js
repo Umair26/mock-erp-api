@@ -102,6 +102,14 @@ function extractProductFromMixed(transcript) {
     .replace(/\s+/g, ' ')
     .trim();
 }
+function spokenToEmail(text) {
+  return text
+    .toLowerCase()
+    .replace(/\s+dot\s+/g, '.')
+    .replace(/\s+at\s+/g, '@')
+    .replace(/\s+/g, '')
+    .match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/)?.[0] || null;
+}
 
 async function updateState(state, transcript) {
   const text = transcript.toLowerCase().trim();
@@ -109,10 +117,13 @@ async function updateState(state, transcript) {
 
   // ── IDENTIFY ──
   if (state.state === STATES.IDENTIFY) {
-    // Check for email
-    const emailMatch = transcript.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-    const lookupParam = emailMatch
-      ? { customer_email: emailMatch[0] }
+    // Check for email — typed or spoken ("d dot wilson at gmail dot com")
+    const emailAddress = 
+      transcript.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)?.[0] 
+      || spokenToEmail(transcript);
+
+    const lookupParam = emailAddress
+      ? { customer_email: emailAddress }
       : { customer_id: extractCustomerId(transcript) };
 
     console.log(`🔍 Lookup: ${JSON.stringify(lookupParam)}`);
@@ -134,7 +145,7 @@ async function updateState(state, transcript) {
     }
     return "I could not find your account. Please say your customer ID, for example C zero zero five, or your email address.";
   }
-
+  
   // ── ORDER ──
   if (state.state === STATES.ORDER) {
     const de = state.customer?.language === 'DE';
