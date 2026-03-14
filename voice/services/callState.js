@@ -116,13 +116,15 @@ function extractProductFromMixed(transcript) {
 }
 
 function spokenToEmail(text) {
-  // Remove everything before the actual email content
+  
   const cleaned = text
     .toLowerCase()
-    .replace(/.*\b(is|address is|email is)\s*/i, '') // strip "my email is"
-    .replace(/\bit'?s\s*/i, '')                        // strip "it's"
+    .replace(/.*\b(is|address is|email is)\s*/i, '')
+    .replace(/\bit'?s\s*/i, '')
+    .replace(/\byeah\.?\s*/i, '')
     .replace(/\s+dot\s+/g, '.')
     .replace(/\s+at the rate\s+/g, '@')
+    .replace(/\s+direct\s+/g, '@')   // ← "direct" → @
     .replace(/\s+at\s+/g, '@')
     .replace(/\s+/g, '');
   return cleaned.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/)?.[0] || null;
