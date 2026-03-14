@@ -29,7 +29,7 @@ function wordsToDigits(text) {
 function extractArticleNumber(text) {
   let converted = wordsToDigits(text);
 
-  // "eight" before digits = letter A (Deepgram mishears A as eight)
+  // "eight" misheard as letter A
   converted = converted.replace(
     /\beight\s*(\d{1,2})\s*(\d{1,2})?\b/gi,
     (_, a, b) => `A${a}${b || ''}`
@@ -37,12 +37,14 @@ function extractArticleNumber(text) {
 
   console.log(`🔄 Article search in: "${converted}"`);
 
-  // Match letter + 2-3 digits with optional spaces: A010, A 0 10, A 010
-  const match = converted.match(/\b([A-Za-z])\s*0*(\d{1,2})\b/);
+  // Match letter + digits — handle "A 0 10" → A010
+  const match = converted.match(/\b([A-Za-z])\s*([\d\s]{1,6})\b/);
   if (match) {
-    const num = parseInt(match[2]);
-    const digits = String(num).padStart(3, '0');
-    return `${match[1].toUpperCase()}${digits}`;
+    const digits = match[2].replace(/\s+/g, '');
+    const num = parseInt(digits, 10);
+    if (!isNaN(num) && num >= 1 && num <= 999) {
+      return `${match[1].toUpperCase()}${String(num).padStart(3, '0')}`;
+    }
   }
 
   return null;

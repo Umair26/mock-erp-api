@@ -116,10 +116,11 @@ function extractProductFromMixed(transcript) {
 }
 
 function spokenToEmail(text) {
-  // Extract only the part after "is" to avoid picking up stray letters
-  const afterIs = text.replace(/.*\b(is|address)\b\s*/i, '').trim();
-  const cleaned = (afterIs || text)
+  // Remove everything before the actual email content
+  const cleaned = text
     .toLowerCase()
+    .replace(/.*\b(is|address is|email is)\s*/i, '') // strip "my email is"
+    .replace(/\bit'?s\s*/i, '')                        // strip "it's"
     .replace(/\s+dot\s+/g, '.')
     .replace(/\s+at the rate\s+/g, '@')
     .replace(/\s+at\s+/g, '@')
@@ -164,7 +165,7 @@ if (!emailAddress && !extractCustomerId(transcript)) {
         console.error('Customer lookup error:', e.message);
       }
     }
-    return "I could not find your account. Please say your customer ID, for example C zero zero five, or your email address.";
+    return "I could not find your account. Please say your customer ID, for Starts from C, or your email address.";
   }
 
   // ── ORDER ──
