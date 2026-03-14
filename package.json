@@ -1,14 +1,16 @@
 {
-  "name": "mock-erp-api",
+  "name": "erp-voice-ordering-system",
   "version": "1.0.0",
-  "description": "Mock ERP API for voice order bot simulation",
+  "description": "Voice ERP ordering system",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node server.js & node voice/voice-server.js",
+    "start:erp": "node server.js",
+    "start:voice": "node voice/voice-server.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "@deepgram/sdk": "^5.0.0",
+    "@deepgram/sdk": "3.9.0",
     "@twilio/voice-sdk": "^2.18.0",
     "axios": "^1.13.6",
     "dotenv": "^17.3.1",
