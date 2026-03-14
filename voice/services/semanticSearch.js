@@ -7,6 +7,18 @@ const headers = { Authorization: `Bearer ${API_TOKEN}` };
 
 function wordsToDigits(text) {
   return text
+    .replace(/\btwenty\s*one\b/gi, '21')
+    .replace(/\btwenty\b/gi, '20')
+    .replace(/\bnineteen\b/gi, '19')
+    .replace(/\beighteen\b/gi, '18')
+    .replace(/\bseventeen\b/gi, '17')
+    .replace(/\bsixteen\b/gi, '16')
+    .replace(/\bfifteen\b/gi, '15')
+    .replace(/\bfourteen\b/gi, '14')
+    .replace(/\bthirteen\b/gi, '13')
+    .replace(/\btwelve\b/gi, '12')
+    .replace(/\beleven\b/gi, '11')
+    .replace(/\bten\b/gi, '10')
     .replace(/\bzero\b/gi, '0').replace(/\bone\b/gi, '1')
     .replace(/\btwo\b/gi, '2').replace(/\bthree\b/gi, '3')
     .replace(/\bfour\b/gi, '4').replace(/\bfive\b/gi, '5')
@@ -15,21 +27,24 @@ function wordsToDigits(text) {
 }
 
 function extractArticleNumber(text) {
-  // "eight zero zero six" → Deepgram mishears "A" as "eight"
-  // Fix: treat "eight" followed by 3 digits (spoken) as letter A
-  let converted = text
-    .replace(/\beight\s+(zero|one|two|three|four|five|six|seven|eight|nine)\s+(zero|one|two|three|four|five|six|seven|eight|nine)\s+(zero|one|two|three|four|five|six|seven|eight|nine)\b/gi, (match) => {
-      return 'A ' + match.replace(/^eight\s+/, '');
-    });
+  let converted = wordsToDigits(text);
 
-  converted = wordsToDigits(converted);
+  // "eight" before digits = letter A (Deepgram mishears A as eight)
+  converted = converted.replace(
+    /\beight\s*(\d{1,2})\s*(\d{1,2})?\b/gi,
+    (_, a, b) => `A${a}${b || ''}`
+  );
+
   console.log(`🔄 Article search in: "${converted}"`);
 
-  // Match: A006, A 0 0 6, a006
-  const match = converted.match(/\b([A-Za-z])\s*(\d)\s*(\d)\s*(\d)\b/);
+  // Match letter + 2-3 digits with optional spaces: A010, A 0 10, A 010
+  const match = converted.match(/\b([A-Za-z])\s*0*(\d{1,2})\b/);
   if (match) {
-    return `${match[1].toUpperCase()}${match[2]}${match[3]}${match[4]}`;
+    const num = parseInt(match[2]);
+    const digits = String(num).padStart(3, '0');
+    return `${match[1].toUpperCase()}${digits}`;
   }
+
   return null;
 }
 
