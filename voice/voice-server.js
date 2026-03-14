@@ -23,14 +23,21 @@ app.get('/health', (req, res) => res.json({ status: 'ok', port: PORT }));
 
 const callStates = new Map();
 
+function isFinalMessage(text) {
+  return /\b(goodbye|bye|auf wiedersehen|tschüss|session has ended)\b/i.test(text);
+}
+
 async function sendVoiceResponse(text, callSid) {
   try {
     console.log(`🔊 Response: "${text}"`);
     const domain = process.env.DOMAIN;
-    await twilioClient.calls(callSid).update({
-      twiml: `<Response><Say>${text}</Say><Connect><Stream url="wss://${domain}/audio-stream"/></Connect></Response>`
-    });
-    console.log('✅ TwiML sent to caller');
+    const final = isFinalMessage(text);
+    const twiml = final
+      ? `<Response><Say>${text}</Say><Hangup/></Response>`
+      : `<Response><Say>${text}</Say><Connect><Stream url="wss://${domain}/audio-stream"/></Connect></Response>`;
+
+    await twilioClient.calls(callSid).update({ twiml });
+    console.log(final ? '📴 Goodbye — call will hang up' : '✅ TwiML sent to caller');
   } catch (err) {
     console.error('❌ Failed to send TwiML:', err.message);
   }
@@ -51,7 +58,6 @@ wss.on('connection', (ws) => {
   let callSid = null;
   let processing = false;
   let state = null;
-  let isReconnect = false;
 
   function startNewDeepgramStream() {
     try {
@@ -61,6 +67,13 @@ wss.on('connection', (ws) => {
         processing = true;
 
         console.log(`🎤 Transcript: "${transcript}"`);
+
+        // Customer said goodbye
+        if (/\b(goodbye|bye|ok goodbye|ok bye|good bye)\b/i.test(transcript)) {
+          await sendVoiceResponse('Thank you. Goodbye!', callSid);
+          processing = false;
+          return;
+        }
 
         try {
           const response = await updateState(state, transcript);
@@ -94,16 +107,12 @@ wss.on('connection', (ws) => {
 
         if (!callStates.has(callSid)) {
           callStates.set(callSid, newCallState());
-          isReconnect = false;
           console.log(`📡 New call — CallSid: ${callSid}`);
         } else {
-          isReconnect = true;
           console.log(`📡 Reconnected — CallSid: ${callSid} | State: ${callStates.get(callSid).state}`);
         }
 
         state = callStates.get(callSid);
-
-        // No re-prompt needed — Twilio already played the last response
       }
 
       if (data.event === 'media') {
@@ -124,8 +133,10 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     console.log('📴 Call ended — WebSocket closed');
     if (dgStream) { try { dgStream.finish(); } catch (_) {} }
+    // Only delete state when call is fully done — NOT on every stream reconnect
     if (callSid && state && state.state === 'DONE') {
       callStates.delete(callSid);
+      console.log(`🗑️ State cleared for ${callSid}`);
     }
   });
 

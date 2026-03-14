@@ -126,9 +126,9 @@ const orders = [
 // HELPERS
 // ─────────────────────────────────────────────
 function generateOrderId() {
-  return "ORD-" + Date.now();
+  const num = Math.floor(10000 + Math.random() * 90000);
+  return "ORD-" + num;
 }
-
 // Normalize customer ID — accepts "1", "01", "001", "C001" → always "C001"
 function normalizeCustomerId(id) {
   if (!id) return null;

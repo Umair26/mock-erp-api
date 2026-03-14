@@ -15,7 +15,6 @@ function newCallState() {
     customer: null,
     cart: [],
     currentItem: null,
-    lastPrompt: null, // track last question asked
   };
 }
 
@@ -33,8 +32,7 @@ function wordsToNumber(text) {
     'ten': 10, 'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
     'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19,
     'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50,
-    'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90,
-    'hundred': 100,
+    'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90, 'hundred': 100,
   };
   const lower = text.toLowerCase();
   for (const [word, val] of Object.entries(map)) {
@@ -47,13 +45,15 @@ function extractCustomerId(transcript) {
   const converted = wordsToDigits(transcript);
   console.log(`🔄 Converted: "${converted}"`);
 
-  const match = converted.match(/c\s*(\d[\s\d]*\d|\d)/i);
-  if (match) {
-    const digits = match[1].replace(/\s+/g, '').padStart(3, '0').slice(0, 3);
+  // Only match C + digits — never match other letters like A (article numbers)
+  const cMatch = converted.match(/\bc\s*(\d[\s\d]*)/i);
+  if (cMatch) {
+    const digits = cMatch[1].replace(/\s+/g, '').slice(0, 3).padStart(3, '0');
     return `C${digits}`;
   }
 
-  const numMatch = converted.match(/(?<![a-z\d])(\d[\s]*\d[\s]*\d|\d[\s]*\d|\d)(?![a-z\d])/i);
+  // Fallback: isolated digits only — NOT preceded by any letter (rules out A007 etc.)
+  const numMatch = converted.match(/(?<![a-zA-Z])(\d\s*\d\s*\d|\d\s*\d|\d)(?!\s*\d)/);
   if (numMatch) {
     const digits = numMatch[1].replace(/\s+/g, '').padStart(3, '0').slice(0, 3);
     return `C${digits}`;
@@ -63,41 +63,44 @@ function extractCustomerId(transcript) {
 }
 
 function extractQuantity(transcript) {
-  // Try word numbers first (thirty, twenty, etc.)
   const wordQty = wordsToNumber(transcript);
   if (wordQty) return wordQty;
-
-  // Then digit conversion
   const converted = wordsToDigits(transcript);
   const match = converted.match(/(\d+)/);
   return match ? parseInt(match[1]) : 1;
 }
 
+// Format price naturally for speech: 19.99 → "19 dollars and 99 cents", 235 → "235 dollars"
+function formatPrice(price) {
+  const dollars = Math.floor(price);
+  const cents = Math.round((price - dollars) * 100);
+  if (cents === 0) return `${dollars} dollars`;
+  return `${dollars} dollars and ${cents} cents`;
+}
+
+// Convert order number digits to spoken words: "14496" → "one four four nine six"
+function speakOrderNumber(orderId) {
+  const digits = orderId.replace('ORD-', '');
+  const digitWords = { '0':'zero','1':'one','2':'two','3':'three','4':'four',
+    '5':'five','6':'six','7':'seven','8':'eight','9':'nine' };
+  return digits.split('').map(d => digitWords[d] || d).join(' ');
+}
+
 function cleanProductQuery(transcript) {
   return transcript
-    .replace(/\b(i want|i need|get me|order|item|number|article|please|yeah|it's|its)\b/gi, ' ')
+    .replace(/\b(i want|i need|get me|order|item|number|article|please|yeah|it's|its|add|also|and)\b/gi, ' ')
     .replace(/\b(pcs?|pieces?|boxes?|units?)\b/gi, ' ')
     .replace(/\d+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
-// Returns a re-prompt if the state needs one after reconnection
-function getRePrompt(state) {
-  const de = state.customer?.language === 'DE';
-  switch (state.state) {
-    case STATES.ORDER:
-      return de ? 'Was möchten Sie bestellen?' : 'What would you like to order?';
-    case STATES.QUANTITY:
-      return de
-        ? `Wie viele ${state.currentItem?.item_title} möchten Sie?`
-        : `How many ${state.currentItem?.item_title} would you like?`;
-    case STATES.ADD_MORE:
-      return de ? 'Möchten Sie noch etwas bestellen?' : 'Would you like to add another item?';
-    case STATES.CONFIRM:
-      return de ? 'Soll ich die Bestellung aufgeben?' : 'Shall I place the order?';
-    default:
-      return null;
-  }
+// Extract product intent from a mixed utterance like "yes please add gearbox lubricant"
+function extractProductFromMixed(transcript) {
+  return transcript
+    .replace(/\b(yes|ja|sure|ok|okay|please|add|also|and|i want|i need|get me)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 async function updateState(state, transcript) {
@@ -106,35 +109,56 @@ async function updateState(state, transcript) {
 
   // ── IDENTIFY ──
   if (state.state === STATES.IDENTIFY) {
-    const customerId = extractCustomerId(transcript);
-    console.log(`🔍 Extracted customer ID: ${customerId}`);
+    // Check for email
+    const emailMatch = transcript.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    const lookupParam = emailMatch
+      ? { customer_email: emailMatch[0] }
+      : { customer_id: extractCustomerId(transcript) };
 
-    if (customerId) {
+    console.log(`🔍 Lookup: ${JSON.stringify(lookupParam)}`);
+
+    if (lookupParam.customer_id || lookupParam.customer_email) {
       try {
-        const customer = await lookupCustomer(customerId);
+        const customer = await lookupCustomer(lookupParam.customer_id || lookupParam.customer_email);
         if (customer && customer.found) {
           state.customer = customer;
           state.state = STATES.ORDER;
           const de = customer.language === 'DE';
           return de
             ? `Guten Tag ${customer.customer_name}. Was möchten Sie bestellen?`
-            : `Hello ${customer.customer_name}. What would you like to order?`;
+            : `Hello ${customer.customer_name}, welcome. What would you like to order today?`;
         }
       } catch (e) {
         console.error('Customer lookup error:', e.message);
       }
     }
-    return 'I could not find that customer ID. Please say your customer ID.';
+    return "I could not find your account. Please say your customer ID, for example C zero zero five, or your email address.";
   }
 
   // ── ORDER ──
   if (state.state === STATES.ORDER) {
     const de = state.customer?.language === 'DE';
 
-    // Try article number via ERP first
+    // Check if customer says nothing/done/no more
+    const nothingIntent = /\b(nothing|no more|that'?s all|done|finished|no|nein|nichts)\b/i.test(text);
+    if (nothingIntent) {
+      if (state.cart.length > 0) {
+        state.state = STATES.CONFIRM;
+        const totalAmount = state.cart.reduce((sum, i) => sum + i.total_price, 0);
+        const summary = state.cart.map(i => `${i.quantity} ${i.item.item_title}`).join(', ');
+        return de
+          ? `Sie haben folgendes im Warenkorb: ${summary}. Gesamt: ${formatPrice(totalAmount)}. Soll ich bestellen?`
+          : `You have ${summary} in your cart. Total is ${formatPrice(totalAmount)}. Shall I place the order?`;
+      } else {
+        return de
+          ? 'Was möchten Sie bestellen? Bitte nennen Sie die Artikelnummer oder den Produktnamen.'
+          : 'What would you like to order? Please provide the article number or product name.';
+      }
+    }
+
+    // Try article number
     const articleMatch = transcript.toUpperCase().match(/A\s*(\d{3})/);
     let item = null;
-
     if (articleMatch) {
       try {
         const result = await lookupItem(`A${articleMatch[1]}`);
@@ -144,12 +168,10 @@ async function updateState(state, transcript) {
       }
     }
 
+    // Semantic search fallback
     if (!item) {
-      const cleanQuery = cleanProductQuery(transcript);
-      if (cleanQuery.trim()) {
-        const { searchProduct } = require('./semanticSearch');
-        item = await searchProduct(transcript); // pass full transcript for A/eight fix
-      }
+      const { searchProduct } = require('./semanticSearch');
+      item = await searchProduct(transcript);
     }
 
     if (item && item.found) {
@@ -161,8 +183,8 @@ async function updateState(state, transcript) {
       state.currentItem = item;
       state.state = STATES.QUANTITY;
       return de
-        ? `Ich habe ${item.item_title} gefunden, Preis ${item.item_price} Euro. Wie viele möchten Sie?`
-        : `I found ${item.item_title}, price $${item.item_price}. How many would you like?`;
+        ? `Ich habe ${item.item_title} gefunden. Wie viele möchten Sie?`
+        : `I found ${item.item_title}. How many would you like?`;
     }
 
     return de
@@ -185,11 +207,10 @@ async function updateState(state, transcript) {
       });
       state.currentItem = null;
       state.state = STATES.ADD_MORE;
-
       const lastItem = state.cart[state.cart.length - 1];
       return de
-        ? `${qty}x ${lastItem.item.item_title} = ${totalPrice.toFixed(2)} Euro. Möchten Sie noch etwas bestellen?`
-        : `${qty}x ${lastItem.item.item_title} = $${totalPrice.toFixed(2)}. Would you like to add another item?`;
+        ? `${qty} ${lastItem.item.item_title} wurde hinzugefügt. Möchten Sie noch etwas bestellen?`
+        : `Got it, ${qty} ${lastItem.item.item_title} added. Would you like to add another item?`;
     }
 
     return de
@@ -200,29 +221,43 @@ async function updateState(state, transcript) {
   // ── ADD MORE ──
   if (state.state === STATES.ADD_MORE) {
     const de = state.customer?.language === 'DE';
-    const yes = /yes|ja|more|add|another|other|want|sure/i.test(text);
-    const no  = /no|nein|done|finished|that'?s|nothing|complete|confirm|place|order/i.test(text);
+    const yes = /\b(yes|ja|more|add|another|other|want|sure|also)\b/i.test(text);
+    const no  = /\b(no|nein|done|finished|that'?s|nothing|complete|confirm|place|order)\b/i.test(text);
 
-    if (yes) {
-      state.state = STATES.ORDER;
-      return de ? 'Was möchten Sie noch bestellen?' : 'What else would you like to order?';
-    }
     if (no) {
       state.state = STATES.CONFIRM;
       const totalAmount = state.cart.reduce((sum, i) => sum + i.total_price, 0);
-      const summary = state.cart.map(i => `${i.quantity}x ${i.item.item_title}`).join(', ');
+      const summary = state.cart.map(i => `${i.quantity} ${i.item.item_title}`).join(', ');
       return de
-        ? `Zusammenfassung: ${summary}. Gesamt: ${totalAmount.toFixed(2)} Euro. Soll ich bestellen?`
-        : `Order summary: ${summary}. Total: $${totalAmount.toFixed(2)}. Shall I place the order?`;
+        ? `Zusammenfassung: ${summary}. Gesamt: ${formatPrice(totalAmount)}. Soll ich bestellen?`
+        : `Your order has ${summary}. Total is ${formatPrice(totalAmount)}. Shall I place the order?`;
     }
+
+    // If they say yes AND mention a product in the same utterance, go straight to ORDER
+    if (yes) {
+      // Check if they also mentioned a product name in the same sentence
+      const productHint = extractProductFromMixed(transcript);
+      const hasProduct = productHint.length > 3 &&
+        !/^(yes|ja|sure|ok|okay|please|add|more|another)$/i.test(productHint.trim());
+
+      state.state = STATES.ORDER;
+
+      if (hasProduct) {
+        // Process it immediately as an order query
+        return await updateState(state, productHint);
+      }
+
+      return de ? 'Was möchten Sie noch bestellen?' : 'What else would you like to order?';
+    }
+
     return de ? 'Bitte sagen Sie Ja oder Nein.' : 'Please say yes or no.';
   }
 
   // ── CONFIRM ──
   if (state.state === STATES.CONFIRM) {
     const de = state.customer?.language === 'DE';
-    const yes = /yes|ja|correct|confirm|proceed|go|ok|okay|place|sure/i.test(text);
-    const no  = /no|nein|cancel|back|change|modify/i.test(text);
+    const yes = /\b(yes|ja|correct|confirm|proceed|go|ok|okay|place|sure)\b/i.test(text);
+    const no  = /\b(no|nein|cancel|back|change|modify)\b/i.test(text);
 
     if (yes) {
       try {
@@ -232,20 +267,24 @@ async function updateState(state, transcript) {
         );
         state.state = STATES.DONE;
         if (order.order_created) {
+          const totalAmount = state.cart.reduce((sum, i) => sum + i.total_price, 0);
+          const spokenId = speakOrderNumber(order.order_id);
           return de
-            ? `Bestellung ${order.order_id} aufgegeben. Gesamt: ${order.total_price} Euro. Auf Wiedersehen!`
-            : `Order ${order.order_id} placed. Total: $${order.total_price}. Thank you, goodbye!`;
+            ? `Ihre Bestellung Nummer ${spokenId} wurde aufgegeben. Gesamt: ${formatPrice(totalAmount)}. Auf Wiedersehen!`
+            : `Your order number ${spokenId} has been placed. Total is ${formatPrice(totalAmount)}. Thank you, goodbye!`;
         }
       } catch (e) {
         console.error('Order error:', e.message);
       }
       return 'Sorry, there was an error placing your order. Goodbye.';
     }
+
     if (no) {
       state.state = STATES.ORDER;
       state.cart = [];
       return de ? 'Kein Problem. Was möchten Sie bestellen?' : 'No problem. What would you like to order?';
     }
+
     return de ? 'Bitte sagen Sie Ja oder Nein.' : 'Please say yes or no.';
   }
 
@@ -256,4 +295,4 @@ async function updateState(state, transcript) {
   return null;
 }
 
-module.exports = { newCallState, updateState, getRePrompt };
+module.exports = { newCallState, updateState };
