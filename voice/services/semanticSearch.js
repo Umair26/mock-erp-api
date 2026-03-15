@@ -30,11 +30,10 @@ function extractArticleNumber(text) {
   let converted = wordsToDigits(text);
 
   // "eight" misheard as letter A
-  converted = converted.replace(
-    /\beight\s*(\d{1,2})\s*(\d{1,2})?\b/gi,
-    (_, a, b) => `A${a}${b || ''}`
-  );
-
+  
+ converted = converted
+  .replace(/s\s*8\s*(\d)\s*(\d)\s*(\d)\b/gi, (_, a, b, c) => `A${a}${b}${c}`)
+  .replace(/\b8\s*(\d)\s*(\d)\s*(\d)\b/gi, (_, a, b, c) => `A${a}${b}${c}`);
   console.log(`🔄 Article search in: "${converted}"`);
 
   // Match letter + digits — handle "A 0 10" → A010

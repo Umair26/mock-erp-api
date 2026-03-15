@@ -45,13 +45,14 @@ function initVoiceServer(app, server) {
 
   // Twilio status callback — fired when call ends, gives us duration
   app.post('/call-status', (req, res) => {
-    const { CallSid, CallDuration, CallStatus } = req.body;
-    console.log(`📊 Call status: ${CallStatus} | Duration: ${CallDuration}s | SID: ${CallSid}`);
-    if (CallDuration) {
-      endCall(CallSid, parseInt(CallDuration));
-    }
-    res.sendStatus(200);
-  });
+  console.log('📊 Raw callback body:', JSON.stringify(req.body));
+  const { CallSid, CallDuration, CallStatus } = req.body;
+  console.log(`📊 Call status: ${CallStatus} | Duration: ${CallDuration}s | SID: ${CallSid}`);
+  if (CallSid && CallDuration) {
+    endCall(CallSid, parseInt(CallDuration));
+  }
+  res.sendStatus(200);
+});
 
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
